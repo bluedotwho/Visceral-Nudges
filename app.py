@@ -52,7 +52,7 @@ st.write("Type a text below and the AI will classify its emotion.")
 
 user_input = st.text_input("Enter your text here:")
 
-ESP32_IP = "http://192.168.0.8"  # ✅ Replace this with your ESP32 IP
+ESP32_IP = "http://192.168.0.8/"  # ✅ Replace this with your ESP32 IP
 
 if st.button("Analyze"):
     if user_input.strip() == "":
@@ -79,3 +79,4 @@ if st.button("Analyze"):
 
             except Exception as e:
                 st.error(f"Error: {e}")
+
