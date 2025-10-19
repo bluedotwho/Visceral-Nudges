@@ -3,17 +3,26 @@ from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
-import requests   # ✅ for sending data to ESP32
+import requests
 
 # -----------------------------
-# Load Hugging Face token
+# Load secrets
 # -----------------------------
 HF_TOKEN = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
+AIO_USERNAME = st.secrets["AIO_USERNAME"]
+AIO_KEY = st.secrets["AIO_KEY"]
+AIO_FEED_NAME = st.secrets["AIO_FEED_NAME"]
 
-if not HF_TOKEN:
-    st.error("HUGGINGFACEHUB_API_TOKEN not found in Streamlit secrets")
+# -----------------------------
+# Validate secrets
+# -----------------------------
+if not HF_TOKEN or not AIO_USERNAME or not AIO_KEY:
+    st.error("One or more required secrets are missing. Please check your Streamlit secrets.")
     st.stop()
 
+# -----------------------------
+# Configure Hugging Face endpoint
+# -----------------------------
 llm_endpoint = HuggingFaceEndpoint(
     repo_id="mistralai/Mistral-7B-Instruct-v0.3",
     task="text-generation",
@@ -23,7 +32,7 @@ llm_endpoint = HuggingFaceEndpoint(
 model = ChatHuggingFace(llm=llm_endpoint)
 
 # -----------------------------
-# Define model output structure
+# Define structured output
 # -----------------------------
 class EmotionOutput(BaseModel):
     emotion: str = Field(description="One of ['Anger', 'Sad', 'Happy', 'Love', 'Neutral']")
@@ -47,36 +56,41 @@ chain = prompt | model | parser
 # -----------------------------
 # Streamlit UI
 # -----------------------------
-st.title("Emotion Analysis App ❤️")
-st.write("Type a text below and the AI will classify its emotion.")
+st.title("💬 Emotion Detector + ESP32 Bridge via Adafruit IO ☁️")
+st.write("Type a sentence, and this app will analyze its emotion and send it to your ESP32 through Adafruit IO.")
 
 user_input = st.text_input("Enter your text here:")
 
-ESP32_IP = "http://192.168.0.8/"  # ✅ Replace this with your ESP32 IP
-
 if st.button("Analyze"):
-    if user_input.strip() == "":
+    if not user_input.strip():
         st.warning("Please enter some text!")
     else:
-        with st.spinner("Analyzing..."):
+        with st.spinner("Analyzing emotion..."):
             try:
+                # Run emotion detection
                 result = chain.invoke({"text": user_input})
-                st.success("Analysis Complete!")
+                st.success("✅ Analysis Complete!")
 
-                # Display on Streamlit
                 st.write(f"**Emotion:** {result.emotion}")
                 st.write(f"**Confidence:** {result.confidence:.2f}")
 
-                # ✅ Send to ESP32
+                # -----------------------------
+                # ☁️ Send Emotion to Adafruit IO
+                # -----------------------------
                 try:
-                    response = requests.get(f"{ESP32_IP}/emotion?value={result.emotion}")
-                    if response.status_code == 200:
-                        st.success(f"Sent '{result.emotion}' to ESP32 ✅")
+                    headers = {"X-AIO-Key": AIO_KEY, "Content-Type": "application/json"}
+                    url = f"https://io.adafruit.com/api/v2/{AIO_USERNAME}/feeds/{AIO_FEED_NAME}/data"
+                    data = {"value": result.emotion}
+
+                    response = requests.post(url, headers=headers, json=data)
+
+                    if response.status_code in [200, 201]:
+                        st.success(f"🚀 Sent '{result.emotion}' to Adafruit IO successfully!")
                     else:
-                        st.warning(f"ESP32 responded with {response.status_code}")
+                        st.warning(f"⚠️ Adafruit IO responded with {response.status_code}: {response.text}")
+
                 except Exception as e:
-                    st.error(f"Could not reach ESP32: {e}")
+                    st.error(f"Error sending to Adafruit IO: {e}")
 
             except Exception as e:
-                st.error(f"Error: {e}")
-
+                st.error(f"Error analyzing text: {e}")
